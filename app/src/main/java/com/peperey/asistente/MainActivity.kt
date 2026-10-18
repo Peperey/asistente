@@ -10,6 +10,10 @@ import android.hardware.camera2.CameraManager
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.WindowManager
+import android.speech.tts.UtteranceProgressListener
 import android.provider.AlarmClock
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -33,6 +37,9 @@ class MainActivity : Activity() {
     private lateinit var keyBox: EditText
     private var tts: TextToSpeech? = null
     private var recognizer: SpeechRecognizer? = null
+    private var handsFree = false
+    private val handler = Handler(Looper.getMainLooper())
+    private lateinit var modeBtn: Button
     private val prefs by lazy { getSharedPreferences("cfg", Context.MODE_PRIVATE) }
 
     private val TOOLS = """[
@@ -68,6 +75,11 @@ class MainActivity : Activity() {
         talk.setOnClickListener { listen() }
         root.addView(talk)
 
+        modeBtn = Button(this)
+        modeBtn.text = "Manos libres: apagado"
+        modeBtn.setOnClickListener { setHandsFree(!handsFree) }
+        root.addView(modeBtn)
+
         log = TextView(this)
         log.textSize = 18f
         val sv = ScrollView(this)
@@ -78,9 +90,33 @@ class MainActivity : Activity() {
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 tts?.setLanguage(Locale("es", "MX"))
+                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {}
+                    override fun onError(utteranceId: String?) { again() }
+                    override fun onDone(utteranceId: String?) { again() }
+                })
             }
         }
         requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
+    }
+
+    private fun setHandsFree(on: Boolean) {
+        handsFree = on
+        runOnUiThread {
+            modeBtn.text = if (on) "Manos libres: encendido" else "Manos libres: apagado"
+            if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        if (on) {
+            handler.postDelayed({ listen() }, 500)
+        } else {
+            handler.removeCallbacksAndMessages(null)
+            runOnUiThread { recognizer?.cancel() }
+        }
+    }
+
+    private fun again() {
+        if (handsFree) handler.postDelayed({ listen() }, 800)
     }
 
     private fun show(t: String) {
@@ -104,12 +140,13 @@ class MainActivity : Activity() {
                 val t = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
                 if (t.isNullOrBlank()) {
                     show("No te oí")
+                    again()
                     return
                 }
                 show("Tú: " + t)
                 ask(t)
             }
-            override fun onError(error: Int) { show("No te oí (código " + error + ")") }
+            override fun onError(error: Int) { if (!handsFree) show("No te oí (código " + error + ")"); again() }
             override fun onReadyForSpeech(params: Bundle?) { show("Escuchando...") }
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) {}
@@ -173,6 +210,7 @@ class MainActivity : Activity() {
                     i.setPackage("org.schabi.newpipe")
                     i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     runOnUiThread { startActivity(i) }
+                    setHandsFree(false)
                     return "Poniendo " + q
                 }
             }
@@ -211,6 +249,7 @@ class MainActivity : Activity() {
                 val txt = stream.bufferedReader().use { it.readText() }
                 if (code != 200) {
                     show("Error " + code + ": " + txt.take(200))
+                    again()
                     return@Thread
                 }
                 val msg = JSONObject(txt).getJSONArray("choices").getJSONObject(0).getJSONObject("message")
@@ -228,8 +267,14 @@ class MainActivity : Activity() {
                 runOnUiThread { tts?.speak(r, TextToSpeech.QUEUE_FLUSH, null, "r1") }
             } catch (e: Exception) {
                 show("Error: " + e.message)
+                again()
             }
         }.start()
+    }
+
+    override fun onPause() {
+        setHandsFree(false)
+        super.onPause()
     }
 
     override fun onDestroy() {

@@ -41,6 +41,8 @@ class MainActivity : Activity() {
     private var recognizer: SpeechRecognizer? = null
     private var handsFree = false
     private var torchOn = false
+    private var lastIds: List<String> = emptyList()
+    private var lastIdx = 0
     private val history = JSONArray()
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var modeBtn: Button
@@ -198,6 +200,16 @@ class MainActivity : Activity() {
                     return "Temporizador iniciado"
                 }
                 "control_musica" -> {
+                    val acc = args.optString("accion", "pausar")
+                    if ((acc == "siguiente" || acc == "anterior") && lastIds.isNotEmpty()) {
+                        lastIdx = if (acc == "siguiente") (lastIdx + 1) % lastIds.size else (lastIdx - 1 + lastIds.size) % lastIds.size
+                        val n = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=" + lastIds[lastIdx]))
+                        n.setPackage("org.schabi.newpipe")
+                        n.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        runOnUiThread { startActivity(n) }
+                        setHandsFree(false)
+                        return "Cambiando de canción"
+                    }
                     val code = when (args.optString("accion", "pausar")) {
                         "reanudar" -> KeyEvent.KEYCODE_MEDIA_PLAY
                         "siguiente" -> KeyEvent.KEYCODE_MEDIA_NEXT
@@ -224,6 +236,8 @@ class MainActivity : Activity() {
                     val html = c.inputStream.bufferedReader().use { it.readText() }
                     val vid = Regex("\"videoId\":\"([\\w-]{11})\"").find(html)?.groupValues?.get(1)
                     if (vid == null) return "No encontré esa canción"
+                    lastIds = html.split("\"videoId\":\"").drop(1).map { it.take(11) }.filter { id -> id.length == 11 && id.all { ch -> ch.isLetterOrDigit() || ch == '_' || ch == '-' } }.distinct().take(10)
+                    lastIdx = lastIds.indexOf(vid).coerceAtLeast(0)
                     val i = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=" + vid))
                     i.setPackage("org.schabi.newpipe")
                     i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

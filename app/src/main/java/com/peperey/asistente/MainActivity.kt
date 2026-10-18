@@ -10,6 +10,8 @@ import android.hardware.camera2.CameraManager
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Bundle
+import android.media.AudioManager
+import android.view.KeyEvent
 import android.os.Handler
 import android.os.Looper
 import android.view.WindowManager
@@ -38,6 +40,8 @@ class MainActivity : Activity() {
     private var tts: TextToSpeech? = null
     private var recognizer: SpeechRecognizer? = null
     private var handsFree = false
+    private var torchOn = false
+    private val history = JSONArray()
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var modeBtn: Button
     private val prefs by lazy { getSharedPreferences("cfg", Context.MODE_PRIVATE) }
@@ -47,7 +51,8 @@ class MainActivity : Activity() {
  {"type":"function","function":{"name":"alarma","description":"Pone una alarma, hora en formato 24 horas","parameters":{"type":"object","properties":{"hora":{"type":"integer"},"minutos":{"type":"integer"}},"required":["hora","minutos"]}}},
  {"type":"function","function":{"name":"temporizador","description":"Inicia un temporizador de cuenta regresiva","parameters":{"type":"object","properties":{"segundos":{"type":"integer"}},"required":["segundos"]}}},
  {"type":"function","function":{"name":"bateria","description":"Dice cuanta bateria le queda al celular","parameters":{"type":"object","properties":{}}}},
- {"type":"function","function":{"name":"musica","description":"Pone musica. Usalo cuando pidan una cancion, artista o playlist","parameters":{"type":"object","properties":{"busqueda":{"type":"string"}},"required":["busqueda"]}}}
+ {"type":"function","function":{"name":"musica","description":"Pone musica. Usalo cuando pidan una cancion, artista o playlist","parameters":{"type":"object","properties":{"busqueda":{"type":"string"}},"required":["busqueda"]}}},
+ {"type":"function","function":{"name":"control_musica","description":"Controla la musica que suena: pausar, reanudar, siguiente cancion o cancion anterior","parameters":{"type":"object","properties":{"accion":{"type":"string","enum":["pausar","reanudar","siguiente","anterior"]}},"required":["accion"]}}}
 ]"""
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -165,10 +170,11 @@ class MainActivity : Activity() {
         try {
             when (name) {
                 "linterna" -> {
-                    val on = args.optBoolean("encender", true)
+                    val on = if (args.has("encender")) args.optBoolean("encender", true) else !torchOn
                     val cm = getSystemService(Context.CAMERA_SERVICE) as CameraManager
                     val id = cm.cameraIdList.first { cm.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true }
                     cm.setTorchMode(id, on)
+                    torchOn = on
                     return if (on) "Linterna encendida" else "Linterna apagada"
                 }
                 "alarma" -> {
@@ -190,6 +196,18 @@ class MainActivity : Activity() {
                     i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     startActivity(i)
                     return "Temporizador iniciado"
+                }
+                "control_musica" -> {
+                    val code = when (args.optString("accion", "pausar")) {
+                        "reanudar" -> KeyEvent.KEYCODE_MEDIA_PLAY
+                        "siguiente" -> KeyEvent.KEYCODE_MEDIA_NEXT
+                        "anterior" -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
+                        else -> KeyEvent.KEYCODE_MEDIA_PAUSE
+                    }
+                    val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+                    return "Listo"
                 }
                 "bateria" -> {
                     val bm = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
@@ -233,6 +251,7 @@ class MainActivity : Activity() {
                 body.put("reasoning_effort", "low")
                 val msgs = JSONArray()
                 msgs.put(JSONObject().put("role", "system").put("content", "Eres un asistente de voz. Responde en una sola frase corta, en español, sin símbolos ni listas. Si piden algo que una herramienta puede hacer, usa la herramienta."))
+                for (j in 0 until history.length()) msgs.put(history.getJSONObject(j))
                 msgs.put(JSONObject().put("role", "user").put("content", q))
                 body.put("messages", msgs)
                 body.put("tools", JSONArray(TOOLS))
@@ -264,6 +283,9 @@ class MainActivity : Activity() {
                     r = if (msg.isNull("content")) "No supe qué responder" else msg.getString("content")
                 }
                 show("Asistente: " + r)
+                history.put(JSONObject().put("role", "user").put("content", q))
+                history.put(JSONObject().put("role", "assistant").put("content", r))
+                while (history.length() > 8) history.remove(0)
                 runOnUiThread { tts?.speak(r, TextToSpeech.QUEUE_FLUSH, null, "r1") }
             } catch (e: Exception) {
                 show("Error: " + e.message)

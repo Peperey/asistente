@@ -224,6 +224,7 @@ class MainActivity : Activity() {
                     val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
                     am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
                     am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+                    if (musicOn) setHandsFree(false)
                     return "Listo"
                 }
                 "volumen" -> {
@@ -242,6 +243,7 @@ class MainActivity : Activity() {
                         am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
                     }
                     val ahora = Math.round(am.getStreamVolume(AudioManager.STREAM_MUSIC) * 100.0 / max).toInt()
+                    if (musicOn) setHandsFree(false)
                     return "Volumen al " + ahora + " por ciento"
                 }
                 "bateria" -> {

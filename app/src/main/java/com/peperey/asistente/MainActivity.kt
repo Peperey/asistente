@@ -41,6 +41,7 @@ class MainActivity : Activity() {
     private var recognizer: SpeechRecognizer? = null
     private var handsFree = false
     private var torchOn = false
+    private var musicOn = false
     private var lastIds: List<String> = emptyList()
     private var lastIdx = 0
     private val history = JSONArray()
@@ -54,7 +55,8 @@ class MainActivity : Activity() {
  {"type":"function","function":{"name":"temporizador","description":"Inicia un temporizador de cuenta regresiva","parameters":{"type":"object","properties":{"segundos":{"type":"integer"}},"required":["segundos"]}}},
  {"type":"function","function":{"name":"bateria","description":"Dice cuanta bateria le queda al celular","parameters":{"type":"object","properties":{}}}},
  {"type":"function","function":{"name":"musica","description":"Pone musica. Usalo cuando pidan una cancion, artista o playlist","parameters":{"type":"object","properties":{"busqueda":{"type":"string"}},"required":["busqueda"]}}},
- {"type":"function","function":{"name":"control_musica","description":"Controla la musica que suena: pausar, reanudar, siguiente cancion o cancion anterior","parameters":{"type":"object","properties":{"accion":{"type":"string","enum":["pausar","reanudar","siguiente","anterior"]}},"required":["accion"]}}}
+ {"type":"function","function":{"name":"control_musica","description":"Controla la musica que suena: pausar, reanudar, siguiente cancion o cancion anterior","parameters":{"type":"object","properties":{"accion":{"type":"string","enum":["pausar","reanudar","siguiente","anterior","detener"]}},"required":["accion"]}}},
+ {"type":"function","function":{"name":"volumen","description":"Cambia el volumen de la musica: subir, bajar, o poner un nivel en porcentaje","parameters":{"type":"object","properties":{"accion":{"type":"string","enum":["subir","bajar","nivel"]},"porcentaje":{"type":"integer"}},"required":["accion"]}}}
 ]"""
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -208,18 +210,39 @@ class MainActivity : Activity() {
                         n.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         runOnUiThread { startActivity(n) }
                         setHandsFree(false)
+                        musicOn = true
                         return "Cambiando de canción"
                     }
+                    musicOn = args.optString("accion", "pausar") != "pausar" && args.optString("accion", "pausar") != "detener"
                     val code = when (args.optString("accion", "pausar")) {
                         "reanudar" -> KeyEvent.KEYCODE_MEDIA_PLAY
                         "siguiente" -> KeyEvent.KEYCODE_MEDIA_NEXT
                         "anterior" -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
+                        "detener" -> KeyEvent.KEYCODE_MEDIA_STOP
                         else -> KeyEvent.KEYCODE_MEDIA_PAUSE
                     }
                     val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
                     am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
                     am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
                     return "Listo"
+                }
+                "volumen" -> {
+                    val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                    val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                    val acc = args.optString("accion", "subir")
+                    if (acc == "nivel") {
+                        val pct = args.optInt("porcentaje", 50).coerceIn(0, 100)
+                        am.setStreamVolume(AudioManager.STREAM_MUSIC, Math.round(max * pct / 100.0).toInt(), 0)
+                    } else {
+                        val dir = if (acc == "bajar") AudioManager.ADJUST_LOWER else AudioManager.ADJUST_RAISE
+                        for (n in 1..3) am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, 0)
+                    }
+                    if (musicOn) {
+                        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
+                        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
+                    }
+                    val ahora = Math.round(am.getStreamVolume(AudioManager.STREAM_MUSIC) * 100.0 / max).toInt()
+                    return "Volumen al " + ahora + " por ciento"
                 }
                 "bateria" -> {
                     val bm = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
@@ -243,6 +266,7 @@ class MainActivity : Activity() {
                     i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     runOnUiThread { startActivity(i) }
                     setHandsFree(false)
+                    musicOn = true
                     return "Poniendo " + q
                 }
             }

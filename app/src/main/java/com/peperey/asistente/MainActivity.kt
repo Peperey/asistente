@@ -107,6 +107,17 @@ class MainActivity : Activity() {
             }
         }
         root.addView(bgBtn)
+
+        val ovBtn = Button(this)
+        ovBtn.text = "Permitir abrir apps en segundo plano"
+        ovBtn.setOnClickListener {
+            if (android.provider.Settings.canDrawOverlays(this)) {
+                show("Ese permiso ya está activo")
+            } else {
+                startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + packageName)))
+            }
+        }
+        root.addView(ovBtn)
         AssistantService.onLog = { m -> show(m) }
 
         log = TextView(this)

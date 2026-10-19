@@ -84,7 +84,10 @@ class AssistantService : Service() {
 
     private fun say(t: String) {
         log("Asistente: " + t)
-        if (!ttsReady) return
+        if (!ttsReady) {
+            speaking = false
+            return
+        }
         speakStart = System.currentTimeMillis()
         speaking = true
         tts?.speak(t, TextToSpeech.QUEUE_FLUSH, null, "u")
@@ -92,7 +95,13 @@ class AssistantService : Service() {
 
     private fun onCommand(cmd: String) {
         log("Tú: " + cmd)
-        say("Entendí: " + cmd)
+        speaking = true
+        speakStart = System.currentTimeMillis()
+        val key = getSharedPreferences("cfg", Context.MODE_PRIVATE).getString("key", "") ?: ""
+        Thread {
+            val r = Brain.answer(this, key, cmd)
+            say(r)
+        }.start()
     }
 
     private fun copyAssets(path: String, dest: File) {

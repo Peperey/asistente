@@ -17,12 +17,14 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.7
+      - name: Descargar modelo de voz
+        run: |
+          curl -fL -o model.zip https://alphacephei.com/vosk/models/vosk-model-small-es-0.42.zip
+          unzip -q model.zip
+          mkdir -p app/src/main/assets
+          mv vosk-model-small-es-0.42 app/src/main/assets/model
       - run: gradle assembleDebug --no-daemon
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           files: app/build/outputs/apk/debug/app-debug.apk
-      - uses: actions/upload-artifact@v4
-        with:
-          name: asistente-apk
-          path: app/build/outputs/apk/debug/app-debug.apk

@@ -89,6 +89,26 @@ class MainActivity : Activity() {
         modeBtn.setOnClickListener { setHandsFree(!handsFree) }
         root.addView(modeBtn)
 
+        val bgBtn = Button(this)
+        bgBtn.text = if (AssistantService.running) "Segundo plano: detener" else "Segundo plano: iniciar"
+        bgBtn.setOnClickListener {
+            val svc = Intent(this, AssistantService::class.java)
+            if (AssistantService.running) {
+                stopService(svc)
+                bgBtn.text = "Segundo plano: iniciar"
+                show("Servicio detenido")
+            } else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                show("Falta el permiso del micrófono")
+            } else {
+                setHandsFree(false)
+                startForegroundService(svc)
+                bgBtn.text = "Segundo plano: detener"
+                show("Servicio iniciado")
+            }
+        }
+        root.addView(bgBtn)
+        AssistantService.onLog = { m -> show(m) }
+
         log = TextView(this)
         log.textSize = 18f
         val sv = ScrollView(this)
@@ -106,7 +126,7 @@ class MainActivity : Activity() {
                 })
             }
         }
-        requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
+        requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS), 1)
     }
 
     private fun setHandsFree(on: Boolean) {
@@ -340,6 +360,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        AssistantService.onLog = null
         recognizer?.destroy()
         tts?.shutdown()
         super.onDestroy()

@@ -27,6 +27,7 @@ object Brain {
  {"type":"function","function":{"name":"temporizador","description":"Inicia un temporizador de cuenta regresiva","parameters":{"type":"object","properties":{"segundos":{"type":"integer"}},"required":["segundos"]}}},
  {"type":"function","function":{"name":"bateria","description":"Dice cuanta bateria le queda al celular","parameters":{"type":"object","properties":{}}}},
  {"type":"function","function":{"name":"musica","description":"Pone musica. Usalo cuando pidan una cancion, artista o playlist","parameters":{"type":"object","properties":{"busqueda":{"type":"string"}},"required":["busqueda"]}}},
+ {"type":"function","function":{"name":"video","description":"Abre un video con imagen en pantalla, por ejemplo un tutorial, trailer o clip. Para solo escuchar musica usa la herramienta musica","parameters":{"type":"object","properties":{"busqueda":{"type":"string"}},"required":["busqueda"]}}},
  {"type":"function","function":{"name":"control_musica","description":"Controla la musica que suena: pausar, reanudar, siguiente cancion, cancion anterior o detener","parameters":{"type":"object","properties":{"accion":{"type":"string","enum":["pausar","reanudar","siguiente","anterior","detener"]}},"required":["accion"]}}},
  {"type":"function","function":{"name":"volumen","description":"Cambia el volumen de la musica: subir, bajar, o poner un nivel en porcentaje","parameters":{"type":"object","properties":{"accion":{"type":"string","enum":["subir","bajar","nivel"]},"porcentaje":{"type":"integer"}},"required":["accion"]}}}
 ]"""
@@ -94,6 +95,21 @@ object Brain {
                     lastIdx = lastIds.indexOf(vid).coerceAtLeast(0)
                     openNewPipe(ctx, vid)
                     return "Poniendo " + q
+                }
+                "video" -> {
+                    val q = args.optString("busqueda", "")
+                    val c = URL("https://www.youtube.com/results?search_query=" + URLEncoder.encode(q, "UTF-8")).openConnection() as HttpURLConnection
+                    c.setRequestProperty("User-Agent", "Mozilla/5.0")
+                    c.setRequestProperty("Accept-Language", "es")
+                    c.connectTimeout = 15000
+                    c.readTimeout = 20000
+                    val html = c.inputStream.bufferedReader().use { it.readText() }
+                    val vid = if (html.contains("videoId")) html.substringAfter("videoId").drop(3).take(11) else ""
+                    if (vid.length != 11) return "No encontré ese video"
+                    val i = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=" + vid))
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    ctx.startActivity(i)
+                    return "Abriendo " + q
                 }
                 "control_musica" -> {
                     val acc = args.optString("accion", "pausar")

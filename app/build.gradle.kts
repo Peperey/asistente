@@ -9,7 +9,7 @@ android {
         applicationId = "com.peperey.asistente"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
+        versionCode = (project.findProperty("vc") as String?)?.toInt() ?: 1
         versionName = "1.0"
     }
     signingConfigs {

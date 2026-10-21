@@ -119,6 +119,11 @@ class MainActivity : Activity() {
         }
         root.addView(ovBtn)
         AssistantService.onLog = { m -> show(m) }
+        if (intent?.getBooleanExtra("auto", false) == true && !AssistantService.running && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            startForegroundService(Intent(this, AssistantService::class.java))
+            bgBtn.text = "Segundo plano: detener"
+            window.decorView.postDelayed({ moveTaskToBack(true) }, 1500)
+        }
 
         log = TextView(this)
         log.textSize = 18f

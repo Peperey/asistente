@@ -23,7 +23,7 @@ jobs:
           unzip -q model.zip
           mkdir -p app/src/main/assets
           mv vosk-model-small-es-0.42 app/src/main/assets/model
-      - run: gradle assembleDebug --no-daemon
+      - run: gradle assembleDebug --no-daemon -Pvc=${{ github.run_number }}
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}

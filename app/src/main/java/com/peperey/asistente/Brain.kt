@@ -29,6 +29,7 @@ object Brain {
  {"type":"function","function":{"name":"bateria","description":"Dice cuanta bateria le queda al celular","parameters":{"type":"object","properties":{}}}},
  {"type":"function","function":{"name":"musica","description":"Pone musica. Usalo cuando pidan una cancion, artista o playlist","parameters":{"type":"object","properties":{"busqueda":{"type":"string"}},"required":["busqueda"]}}},
  {"type":"function","function":{"name":"video","description":"Abre un video con imagen en pantalla, por ejemplo un tutorial, trailer o clip. Para solo escuchar musica usa la herramienta musica","parameters":{"type":"object","properties":{"busqueda":{"type":"string"}},"required":["busqueda"]}}},
+ {"type":"function","function":{"name":"recordatorio","description":"Crea un recordatorio con texto. Usa en_minutos si dicen en cuanto tiempo, por ejemplo en 20 minutos. Usa hora y minutos (formato 24 horas) si dicen a que hora","parameters":{"type":"object","properties":{"texto":{"type":"string"},"en_minutos":{"type":"integer"},"hora":{"type":"integer"},"minutos":{"type":"integer"}},"required":["texto"]}}},
  {"type":"function","function":{"name":"clima","description":"Dice el clima de hoy o de manana en una ciudad. Si no dicen ciudad, deja ciudad vacia para usar la ciudad guardada","parameters":{"type":"object","properties":{"ciudad":{"type":"string"},"dia":{"type":"string","enum":["hoy","manana"]}},"required":[]}}},
  {"type":"function","function":{"name":"guardar_ciudad","description":"Guarda la ciudad donde vive el usuario para consultar el clima","parameters":{"type":"object","properties":{"ciudad":{"type":"string"}},"required":["ciudad"]}}},
  {"type":"function","function":{"name":"llamar","description":"Llama por telefono a un contacto","parameters":{"type":"object","properties":{"contacto":{"type":"string"}},"required":["contacto"]}}},
@@ -168,6 +169,30 @@ object Brain {
                     ctx.startActivity(i)
                     return "Abriendo " + q
                 }
+                "recordatorio" -> {
+                    val texto = args.optString("texto", "Recordatorio")
+                    val enMin = args.optInt("en_minutos", 0)
+                    if (enMin > 0) {
+                        val t = Intent(AlarmClock.ACTION_SET_TIMER)
+                        t.putExtra(AlarmClock.EXTRA_LENGTH, enMin * 60)
+                        t.putExtra(AlarmClock.EXTRA_MESSAGE, texto)
+                        t.putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+                        t.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        ctx.startActivity(t)
+                        return "Listo, te aviso en " + enMin + " minutos: " + texto
+                    }
+                    if (!args.has("hora")) return "¿A qué hora te lo recuerdo?"
+                    val h = args.optInt("hora", 8)
+                    val mi = args.optInt("minutos", 0)
+                    val a = Intent(AlarmClock.ACTION_SET_ALARM)
+                    a.putExtra(AlarmClock.EXTRA_HOUR, h)
+                    a.putExtra(AlarmClock.EXTRA_MINUTES, mi)
+                    a.putExtra(AlarmClock.EXTRA_MESSAGE, texto)
+                    a.putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+                    a.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    ctx.startActivity(a)
+                    return "Listo, te lo recuerdo a las %d con %02d: %s".format(h, mi, texto)
+                }
                 "guardar_ciudad" -> {
                     val ciudad = args.optString("ciudad", "").trim()
                     if (ciudad.isEmpty()) return "No entendí la ciudad"
@@ -235,7 +260,7 @@ object Brain {
             body.put("model", "openai/gpt-oss-20b")
             body.put("reasoning_effort", "low")
             val msgs = JSONArray()
-            msgs.put(JSONObject().put("role", "system").put("content", "Fecha y hora actuales: " + ahora() + ". Eres un asistente de voz. Responde en una sola frase corta, en español, sin símbolos ni listas. Si piden algo que una herramienta puede hacer, usa la herramienta. Puedes llamar por teléfono con la herramienta llamar y mandar mensajes de texto con la herramienta mensaje. Para el clima usa la herramienta clima. Si te dicen en qué ciudad vive el usuario, usa guardar_ciudad. Cuando te pregunten la hora o la fecha, respóndela de forma natural y hablada, usando la fecha y hora actuales que te di."))
+            msgs.put(JSONObject().put("role", "system").put("content", "Fecha y hora actuales: " + ahora() + ". Eres un asistente de voz. Responde en una sola frase corta, en español, sin símbolos ni listas. Si piden algo que una herramienta puede hacer, usa la herramienta. Puedes llamar por teléfono con la herramienta llamar y mandar mensajes de texto con la herramienta mensaje. Para el clima usa la herramienta clima. Para recordatorios del tipo recuérdame algo usa la herramienta recordatorio, no alarma ni temporizador. Si te dicen en qué ciudad vive el usuario, usa guardar_ciudad. Cuando te pregunten la hora o la fecha, respóndela de forma natural y hablada, usando la fecha y hora actuales que te di."))
             for (j in 0 until history.length()) msgs.put(history.getJSONObject(j))
             msgs.put(JSONObject().put("role", "user").put("content", q))
             body.put("messages", msgs)

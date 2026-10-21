@@ -29,6 +29,9 @@ object Brain {
  {"type":"function","function":{"name":"bateria","description":"Dice cuanta bateria le queda al celular","parameters":{"type":"object","properties":{}}}},
  {"type":"function","function":{"name":"musica","description":"Pone musica. Usalo cuando pidan una cancion, artista o playlist","parameters":{"type":"object","properties":{"busqueda":{"type":"string"}},"required":["busqueda"]}}},
  {"type":"function","function":{"name":"video","description":"Abre un video con imagen en pantalla, por ejemplo un tutorial, trailer o clip. Para solo escuchar musica usa la herramienta musica","parameters":{"type":"object","properties":{"busqueda":{"type":"string"}},"required":["busqueda"]}}},
+ {"type":"function","function":{"name":"abrir_app","description":"Abre una aplicacion instalada en el celular por su nombre, por ejemplo WhatsApp o la camara","parameters":{"type":"object","properties":{"nombre":{"type":"string"}},"required":["nombre"]}}},
+ {"type":"function","function":{"name":"guardar_dato","description":"Guarda un dato personal duradero del usuario, como su nombre, gustos o familia. No es para avisos a una hora","parameters":{"type":"object","properties":{"dato":{"type":"string","description":"Frase corta, por ejemplo: El usuario se llama Pepe"}},"required":["dato"]}}},
+ {"type":"function","function":{"name":"olvidar_dato","description":"Borra datos guardados del usuario. Si piden olvidar todo, deja tema vacio","parameters":{"type":"object","properties":{"tema":{"type":"string"}},"required":[]}}},
  {"type":"function","function":{"name":"recordatorio","description":"Crea un recordatorio con texto. Usa en_minutos si dicen en cuanto tiempo, por ejemplo en 20 minutos. Usa hora y minutos (formato 24 horas) si dicen a que hora","parameters":{"type":"object","properties":{"texto":{"type":"string"},"en_minutos":{"type":"integer"},"hora":{"type":"integer"},"minutos":{"type":"integer"}},"required":["texto"]}}},
  {"type":"function","function":{"name":"clima","description":"Dice el clima de hoy o de manana en una ciudad. Si no dicen ciudad, deja ciudad vacia para usar la ciudad guardada","parameters":{"type":"object","properties":{"ciudad":{"type":"string"},"dia":{"type":"string","enum":["hoy","manana"]}},"required":[]}}},
  {"type":"function","function":{"name":"guardar_ciudad","description":"Guarda la ciudad donde vive el usuario para consultar el clima","parameters":{"type":"object","properties":{"ciudad":{"type":"string"}},"required":["ciudad"]}}},
@@ -88,6 +91,33 @@ object Brain {
         val cur = f.getJSONObject("current")
         val tempAhora = Math.round(cur.getDouble("temperature_2m"))
         return "En " + nombre + " ahora hay " + tempAhora + " grados, " + cielo(cur.getInt("weather_code")) + ". Hoy la máxima es de " + max + ", la mínima de " + min + ", y hay " + lluvia + " por ciento de probabilidad de lluvia"
+    }
+
+    private fun norm(s: String): String {
+        return java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD).lowercase().replace(Regex("[^a-z0-9 ]"), "").trim()
+    }
+
+    private fun facts(ctx: Context): MutableList<String> {
+        val raw = ctx.getSharedPreferences("cfg", Context.MODE_PRIVATE).getString("memoria", "[]") ?: "[]"
+        val out = mutableListOf<String>()
+        try {
+            val a = JSONArray(raw)
+            for (i in 0 until a.length()) out.add(a.getString(i))
+        } catch (e: Exception) {
+        }
+        return out
+    }
+
+    private fun saveFacts(ctx: Context, l: List<String>) {
+        val a = JSONArray()
+        for (s in l) a.put(s)
+        ctx.getSharedPreferences("cfg", Context.MODE_PRIVATE).edit().putString("memoria", a.toString()).apply()
+    }
+
+    private fun memoria(ctx: Context): String {
+        val l = facts(ctx)
+        if (l.isEmpty()) return "Aún no sabes nada personal del usuario."
+        return "Lo que sabes del usuario: " + l.joinToString("; ") + "."
     }
 
     private fun openNewPipe(ctx: Context, id: String) {
@@ -168,6 +198,41 @@ object Brain {
                     i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     ctx.startActivity(i)
                     return "Abriendo " + q
+                }
+                "abrir_app" -> {
+                    val pedido = args.optString("nombre", "")
+                    val q = norm(pedido)
+                    if (q.isEmpty()) return "¿Qué aplicación quieres abrir?"
+                    val pm = ctx.packageManager
+                    val main = Intent(Intent.ACTION_MAIN)
+                    main.addCategory(Intent.CATEGORY_LAUNCHER)
+                    val apps = pm.queryIntentActivities(main, 0).map { Pair(it.loadLabel(pm).toString(), it.activityInfo.packageName) }
+                    val hit = apps.firstOrNull { norm(it.first) == q } ?: apps.firstOrNull { val n = norm(it.first); n.isNotEmpty() && (n.contains(q) || (n.length >= 3 && q.contains(n))) }
+                    if (hit == null) return "No encontré la aplicación " + pedido
+                    val li = pm.getLaunchIntentForPackage(hit.second) ?: return "No pude abrir " + hit.first
+                    li.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    ctx.startActivity(li)
+                    return "Abriendo " + hit.first
+                }
+                "guardar_dato" -> {
+                    val d = args.optString("dato", "").trim().take(200)
+                    if (d.isEmpty()) return "No entendí qué guardar"
+                    val l = facts(ctx)
+                    l.add(d)
+                    while (l.size > 30) l.removeAt(0)
+                    saveFacts(ctx, l)
+                    return "Listo, lo tendré presente"
+                }
+                "olvidar_dato" -> {
+                    val t = norm(args.optString("tema", ""))
+                    val l = facts(ctx)
+                    if (t.isEmpty() || t == "todo") {
+                        saveFacts(ctx, emptyList())
+                        return "Listo, olvidé todo lo que sabía de ti"
+                    }
+                    val quedan = l.filter { !norm(it).contains(t) }
+                    saveFacts(ctx, quedan)
+                    return if (quedan.size < l.size) "Listo, lo olvidé" else "No tenía nada guardado sobre eso"
                 }
                 "recordatorio" -> {
                     val texto = args.optString("texto", "Recordatorio")
@@ -260,7 +325,7 @@ object Brain {
             body.put("model", "openai/gpt-oss-20b")
             body.put("reasoning_effort", "low")
             val msgs = JSONArray()
-            msgs.put(JSONObject().put("role", "system").put("content", "Fecha y hora actuales: " + ahora() + ". Eres un asistente de voz. Responde en una sola frase corta, en español, sin símbolos ni listas. Si piden algo que una herramienta puede hacer, usa la herramienta. Puedes llamar por teléfono con la herramienta llamar y mandar mensajes de texto con la herramienta mensaje. Para el clima usa la herramienta clima. Para recordatorios del tipo recuérdame algo usa la herramienta recordatorio, no alarma ni temporizador. Si te dicen en qué ciudad vive el usuario, usa guardar_ciudad. Cuando te pregunten la hora o la fecha, respóndela de forma natural y hablada, usando la fecha y hora actuales que te di."))
+            msgs.put(JSONObject().put("role", "system").put("content", "Fecha y hora actuales: " + ahora() + ". " + memoria(ctx) + " Eres un asistente de voz. Responde en una sola frase corta, en español, sin símbolos ni listas. Si piden algo que una herramienta puede hacer, usa la herramienta. Puedes llamar por teléfono con la herramienta llamar y mandar mensajes de texto con la herramienta mensaje. Para el clima usa la herramienta clima. Para recordatorios del tipo recuérdame algo usa la herramienta recordatorio, no alarma ni temporizador. Para abrir una aplicación usa abrir_app. Cuando el usuario te diga su nombre o un dato personal duradero como gustos, familia o preferencias, guárdalo con guardar_dato, y usa lo que sabes de él de forma natural, sin repetirlo todo. Si te pide que olvides algo usa olvidar_dato. Si te dicen en qué ciudad vive el usuario, usa guardar_ciudad. Cuando te pregunten la hora o la fecha, respóndela de forma natural y hablada, usando la fecha y hora actuales que te di."))
             for (j in 0 until history.length()) msgs.put(history.getJSONObject(j))
             msgs.put(JSONObject().put("role", "user").put("content", q))
             body.put("messages", msgs)

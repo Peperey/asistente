@@ -17,7 +17,7 @@
         <intent><action android:name="android.intent.action.SET_ALARM"/></intent>
         <intent><action android:name="android.intent.action.SET_TIMER"/></intent>
     </queries>
-    <application android:label="Asistente">
+    <application android:label="Asistente" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>

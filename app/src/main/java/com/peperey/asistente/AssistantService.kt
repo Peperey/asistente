@@ -32,6 +32,7 @@ class AssistantService : Service() {
     @Volatile private var alive = false
     @Volatile private var speaking = false
     @Volatile private var needReset = false
+    @Volatile private var forceWait = false
     @Volatile private var speakStart = 0L
     private var tts: TextToSpeech? = null
     private var ttsReady = false
@@ -99,8 +100,17 @@ class AssistantService : Service() {
         speakStart = System.currentTimeMillis()
         val key = getSharedPreferences("cfg", Context.MODE_PRIVATE).getString("key", "") ?: ""
         Thread {
-            val r = Brain.answer(this, key, cmd)
-            say(r)
+            val p = Brain.pending
+            if (p != null) {
+                Brain.pending = null
+                val palabras = cmd.lowercase().split(" ")
+                val si = palabras.any { it == "sí" || it == "si" || it == "claro" || it == "dale" || it == "ok" || it == "adelante" || it == "hazlo" }
+                if (si) say(p()) else say("Cancelado")
+            } else {
+                val r = Brain.answer(this, key, cmd)
+                say(r)
+                if (Brain.pending != null) forceWait = true
+            }
         }.start()
     }
 
@@ -158,8 +168,14 @@ class AssistantService : Service() {
                     needReset = false
                     continue
                 }
+                if (forceWait) {
+                    forceWait = false
+                    waitingCmd = true
+                    deadline = now + 20000
+                }
                 if (waitingCmd && now > deadline) {
                     waitingCmd = false
+                    Brain.pending = null
                     r.reset()
                 }
                 if (r.acceptWaveForm(buf, n)) {

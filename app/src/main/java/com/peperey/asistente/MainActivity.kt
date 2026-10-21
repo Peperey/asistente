@@ -142,7 +142,7 @@ class MainActivity : Activity() {
                 })
             }
         }
-        requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS), 1)
+        requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.READ_CONTACTS, Manifest.permission.CALL_PHONE, Manifest.permission.SEND_SMS), 1)
     }
 
     private fun setHandsFree(on: Boolean) {

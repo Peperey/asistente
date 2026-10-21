@@ -16,6 +16,7 @@ import java.net.URL
 import java.net.URLEncoder
 
 object Brain {
+    @Volatile var pending: (() -> String)? = null
     private var torchOn = false
     private var lastIds: List<String> = emptyList()
     private var lastIdx = 0
@@ -28,6 +29,8 @@ object Brain {
  {"type":"function","function":{"name":"bateria","description":"Dice cuanta bateria le queda al celular","parameters":{"type":"object","properties":{}}}},
  {"type":"function","function":{"name":"musica","description":"Pone musica. Usalo cuando pidan una cancion, artista o playlist","parameters":{"type":"object","properties":{"busqueda":{"type":"string"}},"required":["busqueda"]}}},
  {"type":"function","function":{"name":"video","description":"Abre un video con imagen en pantalla, por ejemplo un tutorial, trailer o clip. Para solo escuchar musica usa la herramienta musica","parameters":{"type":"object","properties":{"busqueda":{"type":"string"}},"required":["busqueda"]}}},
+ {"type":"function","function":{"name":"llamar","description":"Llama por telefono a un contacto","parameters":{"type":"object","properties":{"contacto":{"type":"string"}},"required":["contacto"]}}},
+ {"type":"function","function":{"name":"mensaje","description":"Manda un mensaje de texto SMS a un contacto","parameters":{"type":"object","properties":{"contacto":{"type":"string"},"texto":{"type":"string"}},"required":["contacto","texto"]}}},
  {"type":"function","function":{"name":"control_musica","description":"Controla la musica que suena: pausar, reanudar, siguiente cancion, cancion anterior o detener","parameters":{"type":"object","properties":{"accion":{"type":"string","enum":["pausar","reanudar","siguiente","anterior","detener"]}},"required":["accion"]}}},
  {"type":"function","function":{"name":"volumen","description":"Cambia el volumen de la musica: subir, bajar, o poner un nivel en porcentaje","parameters":{"type":"object","properties":{"accion":{"type":"string","enum":["subir","bajar","nivel"]},"porcentaje":{"type":"integer"}},"required":["accion"]}}}
 ]"""
@@ -111,6 +114,21 @@ object Brain {
                     ctx.startActivity(i)
                     return "Abriendo " + q
                 }
+                "llamar" -> {
+                    val quien = args.optString("contacto", "")
+                    if (!Acciones.tiene(ctx, android.Manifest.permission.READ_CONTACTS)) return "Falta el permiso de contactos en la app"
+                    val c = Acciones.buscar(ctx, quien) ?: return "No encontré a " + quien + " en tus contactos"
+                    pending = { Acciones.llamar(ctx, c) }
+                    return "¿Llamo a " + c.nombre + "?"
+                }
+                "mensaje" -> {
+                    val quien = args.optString("contacto", "")
+                    val texto = args.optString("texto", "")
+                    if (!Acciones.tiene(ctx, android.Manifest.permission.READ_CONTACTS)) return "Falta el permiso de contactos en la app"
+                    val c = Acciones.buscar(ctx, quien) ?: return "No encontré a " + quien + " en tus contactos"
+                    pending = { Acciones.mensaje(ctx, c, texto) }
+                    return "¿Le mando a " + c.nombre + " este mensaje: " + texto + "?"
+                }
                 "control_musica" -> {
                     val acc = args.optString("accion", "pausar")
                     if ((acc == "siguiente" || acc == "anterior") && lastIds.isNotEmpty()) {
@@ -154,7 +172,7 @@ object Brain {
             body.put("model", "openai/gpt-oss-20b")
             body.put("reasoning_effort", "low")
             val msgs = JSONArray()
-            msgs.put(JSONObject().put("role", "system").put("content", "Eres un asistente de voz. Responde en una sola frase corta, en español, sin símbolos ni listas. Si piden algo que una herramienta puede hacer, usa la herramienta."))
+            msgs.put(JSONObject().put("role", "system").put("content", "Eres un asistente de voz. Responde en una sola frase corta, en español, sin símbolos ni listas. Si piden algo que una herramienta puede hacer, usa la herramienta. Puedes llamar por teléfono con la herramienta llamar y mandar mensajes de texto con la herramienta mensaje."))
             for (j in 0 until history.length()) msgs.put(history.getJSONObject(j))
             msgs.put(JSONObject().put("role", "user").put("content", q))
             body.put("messages", msgs)

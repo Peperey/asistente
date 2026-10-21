@@ -29,11 +29,65 @@ object Brain {
  {"type":"function","function":{"name":"bateria","description":"Dice cuanta bateria le queda al celular","parameters":{"type":"object","properties":{}}}},
  {"type":"function","function":{"name":"musica","description":"Pone musica. Usalo cuando pidan una cancion, artista o playlist","parameters":{"type":"object","properties":{"busqueda":{"type":"string"}},"required":["busqueda"]}}},
  {"type":"function","function":{"name":"video","description":"Abre un video con imagen en pantalla, por ejemplo un tutorial, trailer o clip. Para solo escuchar musica usa la herramienta musica","parameters":{"type":"object","properties":{"busqueda":{"type":"string"}},"required":["busqueda"]}}},
+ {"type":"function","function":{"name":"clima","description":"Dice el clima de hoy o de manana en una ciudad. Si no dicen ciudad, deja ciudad vacia para usar la ciudad guardada","parameters":{"type":"object","properties":{"ciudad":{"type":"string"},"dia":{"type":"string","enum":["hoy","manana"]}},"required":[]}}},
+ {"type":"function","function":{"name":"guardar_ciudad","description":"Guarda la ciudad donde vive el usuario para consultar el clima","parameters":{"type":"object","properties":{"ciudad":{"type":"string"}},"required":["ciudad"]}}},
  {"type":"function","function":{"name":"llamar","description":"Llama por telefono a un contacto","parameters":{"type":"object","properties":{"contacto":{"type":"string"}},"required":["contacto"]}}},
  {"type":"function","function":{"name":"mensaje","description":"Manda un mensaje de texto SMS a un contacto","parameters":{"type":"object","properties":{"contacto":{"type":"string"},"texto":{"type":"string"}},"required":["contacto","texto"]}}},
  {"type":"function","function":{"name":"control_musica","description":"Controla la musica que suena: pausar, reanudar, siguiente cancion, cancion anterior o detener","parameters":{"type":"object","properties":{"accion":{"type":"string","enum":["pausar","reanudar","siguiente","anterior","detener"]}},"required":["accion"]}}},
  {"type":"function","function":{"name":"volumen","description":"Cambia el volumen de la musica: subir, bajar, o poner un nivel en porcentaje","parameters":{"type":"object","properties":{"accion":{"type":"string","enum":["subir","bajar","nivel"]},"porcentaje":{"type":"integer"}},"required":["accion"]}}}
 ]"""
+
+    private fun ahora(): String {
+        return java.text.SimpleDateFormat("EEEE d 'de' MMMM 'de' yyyy, HH:mm", java.util.Locale("es", "MX")).format(java.util.Date())
+    }
+
+    private fun getJson(u: String): JSONObject {
+        val c = URL(u).openConnection() as HttpURLConnection
+        c.connectTimeout = 15000
+        c.readTimeout = 20000
+        val t = c.inputStream.bufferedReader().use { it.readText() }
+        return JSONObject(t)
+    }
+
+    private fun cielo(code: Int): String {
+        return when (code) {
+            0 -> "despejado"
+            1, 2 -> "algo nublado"
+            3 -> "nublado"
+            45, 48 -> "niebla"
+            in 51..57 -> "llovizna"
+            in 61..67 -> "lluvia"
+            in 71..77 -> "nieve"
+            in 80..82 -> "chubascos"
+            85, 86 -> "nieve"
+            in 95..99 -> "tormenta"
+            else -> "variable"
+        }
+    }
+
+    private fun clima(ctx: Context, ciudadArg: String, dia: String): String {
+        var ciudad = ciudadArg.trim()
+        if (ciudad.isEmpty()) ciudad = ctx.getSharedPreferences("cfg", Context.MODE_PRIVATE).getString("ciudad", "") ?: ""
+        if (ciudad.isEmpty()) return "Dime tu ciudad, por ejemplo: mi ciudad es Guadalajara"
+        val g = getJson("https://geocoding-api.open-meteo.com/v1/search?count=1&language=es&format=json&name=" + URLEncoder.encode(ciudad, "UTF-8"))
+        val res = g.optJSONArray("results")
+        if (res == null || res.length() == 0) return "No encontré la ciudad " + ciudad
+        val pl = res.getJSONObject(0)
+        val lat = pl.getDouble("latitude")
+        val lon = pl.getDouble("longitude")
+        val nombre = pl.optString("name", ciudad)
+        val f = getJson("https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lon + "&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code&timezone=auto&forecast_days=2")
+        val d = f.getJSONObject("daily")
+        val i = if (dia.lowercase().startsWith("ma")) 1 else 0
+        val max = Math.round(d.getJSONArray("temperature_2m_max").getDouble(i))
+        val min = Math.round(d.getJSONArray("temperature_2m_min").getDouble(i))
+        val lluvia = d.getJSONArray("precipitation_probability_max").optInt(i, 0)
+        val cod = d.getJSONArray("weather_code").getInt(i)
+        if (i == 1) return "Mañana en " + nombre + ": " + cielo(cod) + ". Máxima de " + max + " grados, mínima de " + min + ", y " + lluvia + " por ciento de probabilidad de lluvia"
+        val cur = f.getJSONObject("current")
+        val tempAhora = Math.round(cur.getDouble("temperature_2m"))
+        return "En " + nombre + " ahora hay " + tempAhora + " grados, " + cielo(cur.getInt("weather_code")) + ". Hoy la máxima es de " + max + ", la mínima de " + min + ", y hay " + lluvia + " por ciento de probabilidad de lluvia"
+    }
 
     private fun openNewPipe(ctx: Context, id: String) {
         val i = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=" + id))
@@ -114,6 +168,15 @@ object Brain {
                     ctx.startActivity(i)
                     return "Abriendo " + q
                 }
+                "guardar_ciudad" -> {
+                    val ciudad = args.optString("ciudad", "").trim()
+                    if (ciudad.isEmpty()) return "No entendí la ciudad"
+                    ctx.getSharedPreferences("cfg", Context.MODE_PRIVATE).edit().putString("ciudad", ciudad).apply()
+                    return "Listo, tu ciudad es " + ciudad
+                }
+                "clima" -> {
+                    return clima(ctx, args.optString("ciudad", ""), args.optString("dia", "hoy"))
+                }
                 "llamar" -> {
                     val quien = args.optString("contacto", "")
                     if (!Acciones.tiene(ctx, android.Manifest.permission.READ_CONTACTS)) return "Falta el permiso de contactos en la app"
@@ -172,7 +235,7 @@ object Brain {
             body.put("model", "openai/gpt-oss-20b")
             body.put("reasoning_effort", "low")
             val msgs = JSONArray()
-            msgs.put(JSONObject().put("role", "system").put("content", "Eres un asistente de voz. Responde en una sola frase corta, en español, sin símbolos ni listas. Si piden algo que una herramienta puede hacer, usa la herramienta. Puedes llamar por teléfono con la herramienta llamar y mandar mensajes de texto con la herramienta mensaje."))
+            msgs.put(JSONObject().put("role", "system").put("content", "Fecha y hora actuales: " + ahora() + ". Eres un asistente de voz. Responde en una sola frase corta, en español, sin símbolos ni listas. Si piden algo que una herramienta puede hacer, usa la herramienta. Puedes llamar por teléfono con la herramienta llamar y mandar mensajes de texto con la herramienta mensaje. Para el clima usa la herramienta clima. Si te dicen en qué ciudad vive el usuario, usa guardar_ciudad. Cuando te pregunten la hora o la fecha, respóndela de forma natural y hablada, usando la fecha y hora actuales que te di."))
             for (j in 0 until history.length()) msgs.put(history.getJSONObject(j))
             msgs.put(JSONObject().put("role", "user").put("content", q))
             body.put("messages", msgs)

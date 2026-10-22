@@ -33,6 +33,7 @@ class AssistantService : Service() {
     @Volatile private var speaking = false
     @Volatile private var needReset = false
     @Volatile private var forceWait = false
+    @Volatile private var waitMs = 10000L
     @Volatile private var speakStart = 0L
     private var tts: TextToSpeech? = null
     private var ttsReady = false
@@ -96,6 +97,11 @@ class AssistantService : Service() {
 
     private fun onCommand(cmd: String) {
         log("Tú: " + cmd)
+        val low = cmd.lowercase()
+        if (Brain.pending == null && cmd.split(" ").size <= 4 && listOf("gracias", "adiós", "adios", "hasta luego", "nada más", "nada mas", "eso es todo").any { low.contains(it) }) {
+            say("Con gusto")
+            return
+        }
         speaking = true
         speakStart = System.currentTimeMillis()
         val key = getSharedPreferences("cfg", Context.MODE_PRIVATE).getString("key", "") ?: ""
@@ -111,7 +117,13 @@ class AssistantService : Service() {
                 val r = Brain.answer(this, key, cmd)
                 log("(Groq tardó " + "%.1f".format((System.currentTimeMillis() - t0) / 1000.0) + " s)")
                 say(r)
-                if (Brain.pending != null) forceWait = true
+                if (Brain.pending != null) {
+                    waitMs = 20000L
+                    forceWait = true
+                } else if (!Brain.lastWasTool) {
+                    waitMs = 10000L
+                    forceWait = true
+                }
             }
         }.start()
     }
@@ -176,7 +188,7 @@ class AssistantService : Service() {
                 if (forceWait) {
                     forceWait = false
                     waitingCmd = true
-                    deadline = now + 20000
+                    deadline = now + waitMs
                 }
                 if (waitingCmd && now > deadline) {
                     waitingCmd = false
@@ -202,7 +214,14 @@ class AssistantService : Service() {
                     if (text.isEmpty()) continue
                     if (waitingCmd) {
                         waitingCmd = false
-                        onCommand(text)
+                        val c = if (text.contains(WAKE)) text.substring(text.indexOf(WAKE) + WAKE.length).trim() else text
+                        if (c.isEmpty()) {
+                            waitingCmd = true
+                            deadline = System.currentTimeMillis() + 15000
+                            say("Dime")
+                        } else {
+                            onCommand(c)
+                        }
                     } else {
                         val i = text.indexOf(WAKE)
                         if (i >= 0) {

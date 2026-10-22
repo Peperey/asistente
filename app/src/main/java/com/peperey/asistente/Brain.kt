@@ -17,6 +17,7 @@ import java.net.URLEncoder
 
 object Brain {
     @Volatile var pending: (() -> String)? = null
+    @Volatile var lastWasTool = false
     private var torchOn = false
     private var lastIds: List<String> = emptyList()
     private var lastIdx = 0
@@ -325,7 +326,7 @@ object Brain {
             body.put("model", "openai/gpt-oss-20b")
             body.put("reasoning_effort", "low")
             val msgs = JSONArray()
-            msgs.put(JSONObject().put("role", "system").put("content", "Fecha y hora actuales: " + ahora() + ". " + memoria(ctx) + " Eres un asistente de voz. Responde en una sola frase corta, en español, sin símbolos ni listas. Si piden algo que una herramienta puede hacer, usa la herramienta. Puedes llamar por teléfono con la herramienta llamar y mandar mensajes de texto con la herramienta mensaje. Para el clima usa la herramienta clima. Para recordatorios del tipo recuérdame algo usa la herramienta recordatorio, no alarma ni temporizador. Para abrir una aplicación usa abrir_app. Cuando el usuario te diga su nombre o un dato personal duradero como gustos, familia o preferencias, guárdalo con guardar_dato, y usa lo que sabes de él de forma natural, sin repetirlo todo. Si te pide que olvides algo usa olvidar_dato. Si te dicen en qué ciudad vive el usuario, usa guardar_ciudad. Cuando te pregunten la hora o la fecha, respóndela de forma natural y hablada, usando la fecha y hora actuales que te di."))
+            msgs.put(JSONObject().put("role", "system").put("content", "Fecha y hora actuales: " + ahora() + ". " + memoria(ctx) + " Eres un asistente de voz. Responde en una o dos frases cortas, en español, sin símbolos ni listas, con tono amable y natural de conversación. Si el usuario hace una pregunta de seguimiento, usa lo que ya hablaron. Si piden algo que una herramienta puede hacer, usa la herramienta. Puedes llamar por teléfono con la herramienta llamar y mandar mensajes de texto con la herramienta mensaje. Para el clima usa la herramienta clima. Para recordatorios del tipo recuérdame algo usa la herramienta recordatorio, no alarma ni temporizador. Para abrir una aplicación usa abrir_app. Cuando el usuario te diga su nombre o un dato personal duradero como gustos, familia o preferencias, guárdalo con guardar_dato, y usa lo que sabes de él de forma natural, sin repetirlo todo. Si te pide que olvides algo usa olvidar_dato. Si te dicen en qué ciudad vive el usuario, usa guardar_ciudad. Cuando te pregunten la hora o la fecha, respóndela de forma natural y hablada, usando la fecha y hora actuales que te di."))
             for (j in 0 until history.length()) msgs.put(history.getJSONObject(j))
             msgs.put(JSONObject().put("role", "user").put("content", q))
             body.put("messages", msgs)
@@ -345,6 +346,7 @@ object Brain {
             val msg = JSONObject(txt).getJSONArray("choices").getJSONObject(0).getJSONObject("message")
             val calls = msg.optJSONArray("tool_calls")
             val r: String
+            lastWasTool = calls != null && calls.length() > 0
             if (calls != null && calls.length() > 0) {
                 val f = calls.getJSONObject(0).getJSONObject("function")
                 val args = JSONObject(f.optString("arguments", "{}").ifBlank { "{}" })
@@ -354,7 +356,7 @@ object Brain {
             }
             history.put(JSONObject().put("role", "user").put("content", q))
             history.put(JSONObject().put("role", "assistant").put("content", r))
-            while (history.length() > 8) history.remove(0)
+            while (history.length() > 16) history.remove(0)
             return r
         } catch (e: Exception) {
             return "Hubo un error: " + (e.message ?: "desconocido")

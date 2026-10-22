@@ -31,6 +31,7 @@ object Brain {
  {"type":"function","function":{"name":"musica","description":"Pone musica. Usalo cuando pidan una cancion, artista o playlist","parameters":{"type":"object","properties":{"busqueda":{"type":"string"}},"required":["busqueda"]}}},
  {"type":"function","function":{"name":"video","description":"Abre un video con imagen en pantalla, por ejemplo un tutorial, trailer o clip. Para solo escuchar musica usa la herramienta musica","parameters":{"type":"object","properties":{"busqueda":{"type":"string"}},"required":["busqueda"]}}},
  {"type":"function","function":{"name":"abrir_app","description":"Abre una aplicacion instalada en el celular por su nombre, por ejemplo WhatsApp o la camara","parameters":{"type":"object","properties":{"nombre":{"type":"string"}},"required":["nombre"]}}},
+ {"type":"function","function":{"name":"cerrar_app","description":"Cierra una aplicacion abierta del celular por su nombre, por ejemplo WhatsApp","parameters":{"type":"object","properties":{"nombre":{"type":"string"}},"required":["nombre"]}}},
  {"type":"function","function":{"name":"guardar_dato","description":"Guarda un dato personal duradero del usuario, como su nombre, gustos o familia. No es para avisos a una hora","parameters":{"type":"object","properties":{"dato":{"type":"string","description":"Frase corta, por ejemplo: El usuario se llama Pepe"}},"required":["dato"]}}},
  {"type":"function","function":{"name":"olvidar_dato","description":"Borra datos guardados del usuario. Si piden olvidar todo, deja tema vacio","parameters":{"type":"object","properties":{"tema":{"type":"string"}},"required":[]}}},
  {"type":"function","function":{"name":"recordatorio","description":"Crea un recordatorio con texto. Usa en_minutos si dicen en cuanto tiempo, por ejemplo en 20 minutos. Usa hora y minutos (formato 24 horas) si dicen a que hora","parameters":{"type":"object","properties":{"texto":{"type":"string"},"en_minutos":{"type":"integer"},"hora":{"type":"integer"},"minutos":{"type":"integer"}},"required":["texto"]}}},
@@ -215,6 +216,25 @@ object Brain {
                     ctx.startActivity(li)
                     return "Abriendo " + hit.first
                 }
+                "cerrar_app" -> {
+                    val pedido = args.optString("nombre", "")
+                    val q = norm(pedido)
+                    if (q.isEmpty()) return "¿Qué aplicación quieres cerrar?"
+                    val pm = ctx.packageManager
+                    val main = Intent(Intent.ACTION_MAIN)
+                    main.addCategory(Intent.CATEGORY_LAUNCHER)
+                    val apps = pm.queryIntentActivities(main, 0).map { Pair(it.loadLabel(pm).toString(), it.activityInfo.packageName) }
+                    val hit = apps.firstOrNull { norm(it.first) == q } ?: apps.firstOrNull { val n = norm(it.first); n.isNotEmpty() && (n.contains(q) || (n.length >= 3 && q.contains(n))) }
+                    if (hit == null) return "No encontré la aplicación " + pedido
+                    val home = Intent(Intent.ACTION_MAIN)
+                    home.addCategory(Intent.CATEGORY_HOME)
+                    home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    ctx.startActivity(home)
+                    Thread.sleep(1200)
+                    val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+                    am.killBackgroundProcesses(hit.second)
+                    return "Cerré " + hit.first
+                }
                 "guardar_dato" -> {
                     val d = args.optString("dato", "").trim().take(200)
                     if (d.isEmpty()) return "No entendí qué guardar"
@@ -326,7 +346,7 @@ object Brain {
             body.put("model", "openai/gpt-oss-20b")
             body.put("reasoning_effort", "low")
             val msgs = JSONArray()
-            msgs.put(JSONObject().put("role", "system").put("content", "Fecha y hora actuales: " + ahora() + ". " + memoria(ctx) + " Eres un asistente de voz. Responde en una o dos frases cortas, en español, sin símbolos ni listas, con tono amable y natural de conversación. Si el usuario hace una pregunta de seguimiento, usa lo que ya hablaron. Si piden algo que una herramienta puede hacer, usa la herramienta. Puedes llamar por teléfono con la herramienta llamar y mandar mensajes de texto con la herramienta mensaje. Para el clima usa la herramienta clima. Para recordatorios del tipo recuérdame algo usa la herramienta recordatorio, no alarma ni temporizador. Para abrir una aplicación usa abrir_app. Cuando el usuario te diga su nombre o un dato personal duradero como gustos, familia o preferencias, guárdalo con guardar_dato, y usa lo que sabes de él de forma natural, sin repetirlo todo. Si te pide que olvides algo usa olvidar_dato. Si te dicen en qué ciudad vive el usuario, usa guardar_ciudad. Cuando te pregunten la hora o la fecha, respóndela de forma natural y hablada, usando la fecha y hora actuales que te di."))
+            msgs.put(JSONObject().put("role", "system").put("content", "Fecha y hora actuales: " + ahora() + ". " + memoria(ctx) + " Eres un asistente de voz. Responde en una o dos frases cortas, en español, sin símbolos ni listas, con tono amable y natural de conversación. Si el usuario hace una pregunta de seguimiento, usa lo que ya hablaron. Si piden algo que una herramienta puede hacer, usa la herramienta. Puedes llamar por teléfono con la herramienta llamar y mandar mensajes de texto con la herramienta mensaje. Para el clima usa la herramienta clima. Para recordatorios del tipo recuérdame algo usa la herramienta recordatorio, no alarma ni temporizador. Para abrir una aplicación usa abrir_app y para cerrarla usa cerrar_app. Cuando el usuario te diga su nombre o un dato personal duradero como gustos, familia o preferencias, guárdalo con guardar_dato, y usa lo que sabes de él de forma natural, sin repetirlo todo. Si te pide que olvides algo usa olvidar_dato. Si te dicen en qué ciudad vive el usuario, usa guardar_ciudad. Cuando te pregunten la hora o la fecha, respóndela de forma natural y hablada, usando la fecha y hora actuales que te di."))
             for (j in 0 until history.length()) msgs.put(history.getJSONObject(j))
             msgs.put(JSONObject().put("role", "user").put("content", q))
             body.put("messages", msgs)

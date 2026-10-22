@@ -107,7 +107,9 @@ class AssistantService : Service() {
                 val si = palabras.any { it == "sí" || it == "si" || it == "claro" || it == "dale" || it == "ok" || it == "adelante" || it == "hazlo" }
                 if (si) say(p()) else say("Cancelado")
             } else {
+                val t0 = System.currentTimeMillis()
                 val r = Brain.answer(this, key, cmd)
+                log("(Groq tardó " + "%.1f".format((System.currentTimeMillis() - t0) / 1000.0) + " s)")
                 say(r)
                 if (Brain.pending != null) forceWait = true
             }
@@ -151,9 +153,12 @@ class AssistantService : Service() {
             val mc = AudioRecord(MediaRecorder.AudioSource.MIC, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, size * 2)
             mic = mc
             mc.startRecording()
-            val buf = ShortArray(4000)
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO)
+            val buf = ShortArray(1600)
             var waitingCmd = false
             var deadline = 0L
+            var lastPart = ""
+            var lastChange = 0L
             log("Listo. Di: oye asistente")
             while (alive) {
                 val n = mc.read(buf, 0, buf.size)
@@ -178,8 +183,22 @@ class AssistantService : Service() {
                     Brain.pending = null
                     r.reset()
                 }
-                if (r.acceptWaveForm(buf, n)) {
-                    val text = JSONObject(r.result).optString("text", "").trim()
+                var fin = r.acceptWaveForm(buf, n)
+                var text = ""
+                if (fin) {
+                    text = JSONObject(r.result).optString("text", "").trim()
+                } else {
+                    val part = JSONObject(r.partialResult).optString("partial", "").trim()
+                    if (part != lastPart) {
+                        lastPart = part
+                        lastChange = now
+                    } else if (part.isNotEmpty() && now - lastChange > 600) {
+                        text = JSONObject(r.finalResult).optString("text", "").trim()
+                        fin = true
+                    }
+                }
+                if (fin) {
+                    lastPart = ""
                     if (text.isEmpty()) continue
                     if (waitingCmd) {
                         waitingCmd = false
